@@ -61,6 +61,11 @@ impl IcmpHeader {
     }
 
     pub fn handle_request(&self, ipv4_header: &Ipv4Header) -> Desicion {
+        info!(
+            "Request detected: id={} seq={}",
+            self.identifier, self.sequence
+        );
+
         match (self.icmp_type, self.code) {
             // Echo Request
             (8, 0) => {

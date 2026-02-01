@@ -1,7 +1,12 @@
 use crate::{
     firewall::Banlist,
-    net::{icmp::IcmpHeader, ipv4::Ipv4Header},
+    net::{
+        icmp::IcmpHeader,
+        ipv4::Ipv4Header,
+        udp::{UdpHeader, UdpSocket},
+    },
 };
+use std::collections::HashMap;
 
 pub enum Desicion {
     Reply(Vec<u8>),
@@ -11,9 +16,23 @@ pub enum Desicion {
 #[derive(Default)]
 pub struct Dispatcher {
     banlist: Banlist,
+    udp_sockets: HashMap<u16, UdpSocket>,
 }
 
 impl Dispatcher {
+    pub fn udp_bind<F>(&mut self, port: u16, handler: F)
+    where
+        F: FnMut(&Ipv4Header, &UdpHeader) -> Option<Vec<u8>> + 'static,
+    {
+        self.udp_sockets.insert(
+            port,
+            UdpSocket {
+                port,
+                handler: Box::new(handler),
+            },
+        );
+    }
+
     pub fn handle_packet(&mut self, buf: &[u8]) -> Option<Vec<u8>> {
         if !(buf.len() >= 4
             && u32::from_be_bytes(buf[0..4].try_into().unwrap()) == libc::AF_INET as u32)
@@ -40,6 +59,15 @@ impl Dispatcher {
                     } else {
                         None
                     }
+                }
+                17 => {
+                    // UDP
+                    if let Some(udp_header) = UdpHeader::from_bytes(payload)
+                        && let Some(sock) = self.udp_sockets.get_mut(&udp_header.destination_port)
+                    {
+                        return (sock.handler)(&ipv4_header, &udp_header);
+                    }
+                    None
                 }
                 _ => None,
             }
